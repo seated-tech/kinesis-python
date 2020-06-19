@@ -73,15 +73,16 @@ class ShardReader(SubprocessLoop):
 
 
 class KinesisConsumer(object):
-    """Consume from a kinesis stream
+    """Consume from a kinesis stream with multiple shards
 
     A process is started for each shard we are to consume from.  Each process passes messages back up to the parent,
     which are returned via the main iterator.
     """
     LOCK_DURATION = 30
 
-    def __init__(self, stream_name, boto3_session=None, state=None, reader_sleep_time=None):
+    def __init__(self, stream_name, read_from=None,  boto3_session=None, state=None, reader_sleep_time=None):
         self.stream_name = stream_name
+        self.read_from = read_from or 'TRIM_HORIZON'
         self.error_queue = multiprocessing.Queue()
         self.record_queue = multiprocessing.Queue()
 
@@ -110,7 +111,6 @@ class KinesisConsumer(object):
         log.debug("Describing stream")
         self.stream_data = self.kinesis_client.describe_stream(StreamName=self.stream_name)
         # XXX TODO: handle StreamStatus -- our stream might not be ready, or might be deleting
-
         setup_again = False
         for shard_data in self.stream_data['StreamDescription']['Shards']:
             # see if we can get a lock on this shard id
@@ -129,14 +129,17 @@ class KinesisConsumer(object):
                     # since we failed to lock the shard we just continue to the next one
                     continue
 
+            # -- NOTE -- this is important for detecting NEW shards...
+            # -- NOTE -- OR for dealing with shards first time they are set up
             # we should try to start a shard reader if the shard id specified isn't in our shards
             if shard_data['ShardId'] not in self.shards:
                 log.info("Shard reader for %s does not exist, creating...", shard_data['ShardId'])
                 try:
                     iterator_args = self.state.get_iterator_args(self.state_shard_id(shard_data['ShardId']))
                 except AttributeError:
-                    # no self.state
-                    iterator_args = dict(ShardIteratorType='LATEST')
+                    # no self.state - so no sequences!
+                    # in this case, start over, read from same point for all
+                    iterator_args = dict(ShardIteratorType=self.read_from)
 
                 log.info("%s iterator arguments: %s", shard_data['ShardId'], iterator_args)
 
@@ -156,7 +159,8 @@ class KinesisConsumer(object):
                     sleep_time=self.reader_sleep_time,
                 )
             else:
-                log.debug(
+                # if the shard IS ALREADY SET UP, we don't have to do as much
+                log.info(
                     "Checking shard reader %s process at pid %d",
                     shard_data['ShardId'],
                     self.shards[shard_data['ShardId']].process.pid
@@ -183,9 +187,11 @@ class KinesisConsumer(object):
         try:
             # use lock duration - 1 here since we want to renew our lock before it expires
             lock_duration_check = self.LOCK_DURATION - 1
+
+            # Why two loops? incase NEW shards get set up...
             while self.run:
                 last_setup_check = time.time()
-                self.setup_shards()
+                self.setup_shards() # sets up first shard, then other shards thereafeter...
 
                 while self.run and (time.time() - last_setup_check) < lock_duration_check:
                     try:
