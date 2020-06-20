@@ -203,7 +203,8 @@ class KinesisConsumer(object):
                         for item in resp['Records']:
                             if not self.run:
                                 break
-
+                            item["Stream"] = self.stream_name
+                            item["ShardId"] = shard_id
                             yield item
 
                             try:
