@@ -170,7 +170,7 @@ class KinesisConsumer(object):
                     self.shutdown_shard_reader(shard_data['ShardId'])
                     setup_again = True
                 else:
-                    log.debug("Shard reader %s alive & well", shard_data['ShardId'])
+                    log.info("Shard reader %s alive & well", shard_data['ShardId'])
 
         if setup_again:
             self.setup_shards()
@@ -204,7 +204,6 @@ class KinesisConsumer(object):
                             if not self.run:
                                 break
 
-                            log.debug(item)
                             yield item
 
                             try:

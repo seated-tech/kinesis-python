@@ -122,7 +122,7 @@ class AsyncProducer(SubprocessLoop):
 
     def flush_records(self):
         if self.records:
-            log.debug("Flushing %d records", len(self.records))
+            print(f"Pushing {len(self.records)} records to dw-parsed-business-staging")
             self.client.put_records(
                 StreamName=self.stream_name,
                 Records=self.records
