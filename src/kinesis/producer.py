@@ -140,5 +140,5 @@ class KinesisProducer(object):
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
                                             max_size=max_size, boto3_session=boto3_session)
 
-    def put(self, data, explicit_hash_key=None, partition_key=None):
+    def put(self, data, explicit_hash_key=None, partition_key="default"):
         self.queue.put((data, explicit_hash_key, partition_key))
