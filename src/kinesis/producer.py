@@ -1,10 +1,10 @@
 from __future__ import absolute_import
 
+import time
 import collections
 import logging
 import multiprocessing
 import sys
-import time
 
 import boto3
 import six
@@ -56,7 +56,7 @@ class AsyncProducer(SubprocessLoop):
     # * Each shard can support up to 1,000 records per second for writes, up to a maximum total data write rate of 1 MB
     #   per second (including partition keys).
     # * PutRecords supports up to 500 records in a single call
-    MAX_SIZE = (2 ** 20)
+    MAX_SIZE = 1000000
     MAX_COUNT = 500
 
     def __init__(self, stream_name, buffer_time, queue, max_count=None, max_size=None, boto3_session=None):
@@ -99,8 +99,9 @@ class AsyncProducer(SubprocessLoop):
 
             records_size += sizeof(record)
             if records_size >= self.max_size:
-                log.debug("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
+                log.info("Records exceed MAX_SIZE (%s)!  Adding to next_records: %s", self.max_size, record)
                 self.next_records = [record]
+                time.sleep(1)
                 break
 
             log.debug("Adding to records (%d bytes): %s", records_size, record)
@@ -108,7 +109,8 @@ class AsyncProducer(SubprocessLoop):
 
             records_count += 1
             if records_count == self.max_count:
-                log.debug("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
+                log.info("Records have reached MAX_COUNT (%s)!  Flushing records.", self.max_count)
+                time.sleep(1)
                 break
 
         self.flush_records()
@@ -117,7 +119,6 @@ class AsyncProducer(SubprocessLoop):
     def end(self):
         # At the end of our loop (before we exit, i.e. via a signal) we change our buffer time to 250ms and then re-call
         # the loop() method to ensure that we've drained any remaining items from our queue before we exit.
-        self.buffer_time = 0.25
         self.loop()
 
     def flush_records(self):
@@ -135,7 +136,7 @@ class AsyncProducer(SubprocessLoop):
 class KinesisProducer(object):
     """Produce to Kinesis streams via an AsyncProducer"""
 
-    def __init__(self, stream_name, buffer_time=0.5, max_count=None, max_size=None, boto3_session=None):
+    def __init__(self, stream_name, buffer_time=1, max_count=None, max_size=None, boto3_session=None):
         self.queue = multiprocessing.Queue()
         self.async_producer = AsyncProducer(stream_name, buffer_time, self.queue, max_count=max_count,
                                             max_size=max_size, boto3_session=boto3_session)
